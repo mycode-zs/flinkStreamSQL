@@ -21,6 +21,7 @@
 package com.dtstack.flink.sql.side;
 
 import com.dtstack.flink.sql.enums.ECacheType;
+import com.dtstack.flink.sql.parser.CreateTmpTableParser;
 import com.dtstack.flink.sql.side.operator.SideAsyncOperator;
 import com.dtstack.flink.sql.side.operator.SideWithAllCacheOperator;
 import org.apache.calcite.sql.SqlBasicCall;
@@ -177,7 +178,131 @@ public class SideSqlExec {
 
                 replaceInfoList.add(replaceInfo);
 
-                tableEnv.registerDataStream(joinInfo.getNewTableName(), dsOut, String.join(",", sideOutTypeInfo.getFieldNames()));
+                if (!tableEnv.isRegistered(joinInfo.getNewTableName())){
+                    tableEnv.registerDataStream(joinInfo.getNewTableName(), dsOut, String.join(",", sideOutTypeInfo.getFieldNames()));
+                }
+            }
+        }
+
+    }
+
+    public void registerTmpTable(CreateTmpTableParser.SqlParserResult result,
+                                 Map<String, SideTableInfo> sideTableMap, StreamTableEnvironment tableEnv,
+                                 Map<String, Table> tableCache)
+            throws Exception {
+
+        if(localSqlPluginPath == null){
+            throw new RuntimeException("need to set localSqlPluginPath");
+        }
+
+        Map<String, Table> localTableCache = Maps.newHashMap(tableCache);
+        Queue<Object> exeQueue = sideSQLParser.getExeQueue(result.getExecSql(), sideTableMap.keySet());
+        Object pollObj = null;
+
+        //need clean
+        boolean preIsSideJoin = false;
+        List<FieldReplaceInfo> replaceInfoList = Lists.newArrayList();
+
+        while((pollObj = exeQueue.poll()) != null){
+
+            if(pollObj instanceof SqlNode){
+                SqlNode pollSqlNode = (SqlNode) pollObj;
+
+                if(preIsSideJoin){
+                    preIsSideJoin = false;
+                    for(FieldReplaceInfo replaceInfo : replaceInfoList){
+                        replaceFieldName(pollSqlNode, replaceInfo.getMappingTable(), replaceInfo.getTargetTableName(), replaceInfo.getTargetTableAlias());
+                    }
+                }
+
+                if(pollSqlNode.getKind() == INSERT){
+                    tableEnv.sqlUpdate(pollSqlNode.toString());
+                }else if(pollSqlNode.getKind() == AS){
+                    AliasInfo aliasInfo = parseASNode(pollSqlNode);
+                    Table table = tableEnv.sql(aliasInfo.getName());
+                    tableEnv.registerTable(aliasInfo.getAlias(), table);
+                    localTableCache.put(aliasInfo.getAlias(), table);
+                } else {
+                    tableEnv.registerTable(result.getTableName(), tableEnv.sqlQuery(pollObj.toString()));
+                }
+
+            }else if (pollObj instanceof JoinInfo){
+                preIsSideJoin = true;
+                JoinInfo joinInfo = (JoinInfo) pollObj;
+
+                JoinScope joinScope = new JoinScope();
+                JoinScope.ScopeChild leftScopeChild = new JoinScope.ScopeChild();
+                leftScopeChild.setAlias(joinInfo.getLeftTableAlias());
+                leftScopeChild.setTableName(joinInfo.getLeftTableName());
+
+                Table leftTable = getTableFromCache(localTableCache, joinInfo.getLeftTableAlias(), joinInfo.getLeftTableName());
+                RowTypeInfo leftTypeInfo = new RowTypeInfo(leftTable.getSchema().getTypes(), leftTable.getSchema().getColumnNames());
+                leftScopeChild.setRowTypeInfo(leftTypeInfo);
+
+                JoinScope.ScopeChild rightScopeChild = new JoinScope.ScopeChild();
+                rightScopeChild.setAlias(joinInfo.getRightTableAlias());
+                rightScopeChild.setTableName(joinInfo.getRightTableName());
+                SideTableInfo sideTableInfo = sideTableMap.get(joinInfo.getRightTableName());
+                if(sideTableInfo == null){
+                    sideTableInfo = sideTableMap.get(joinInfo.getRightTableName());
+                }
+
+                if(sideTableInfo == null){
+                    throw new RuntimeException("can't not find side table:" + joinInfo.getRightTableName());
+                }
+
+                if(!checkJoinCondition(joinInfo.getCondition(), joinInfo.getRightTableAlias(), sideTableInfo.getPrimaryKeys())){
+                    throw new RuntimeException("ON condition must contain all equal fields!!!");
+                }
+
+                rightScopeChild.setRowTypeInfo(sideTableInfo.getRowTypeInfo());
+
+                joinScope.addScope(leftScopeChild);
+                joinScope.addScope(rightScopeChild);
+
+                //获取两个表的所有字段
+                List<FieldInfo> sideJoinFieldInfo = ParserJoinField.getRowTypeInfo(joinInfo.getSelectNode(), joinScope, true);
+
+                String leftTableAlias = joinInfo.getLeftTableAlias();
+                Table targetTable = localTableCache.get(leftTableAlias);
+                if(targetTable == null){
+                    targetTable = localTableCache.get(joinInfo.getLeftTableName());
+                }
+
+                RowTypeInfo typeInfo = new RowTypeInfo(targetTable.getSchema().getTypes(), targetTable.getSchema().getColumnNames());
+                DataStream adaptStream = tableEnv.toAppendStream(targetTable, org.apache.flink.types.Row.class);
+
+                //join side table before keyby ===> Reducing the size of each dimension table cache of async
+                if(sideTableInfo.isPartitionedJoin()){
+                    List<String> leftJoinColList = getConditionFields(joinInfo.getCondition(), joinInfo.getLeftTableAlias());
+                    String[] leftJoinColArr = new String[leftJoinColList.size()];
+                    leftJoinColArr = leftJoinColList.toArray(leftJoinColArr);
+                    adaptStream = adaptStream.keyBy(leftJoinColArr);
+                }
+
+                DataStream dsOut = null;
+                if(ECacheType.ALL.name().equalsIgnoreCase(sideTableInfo.getCacheType())){
+                    dsOut = SideWithAllCacheOperator.getSideJoinDataStream(adaptStream, sideTableInfo.getType(), localSqlPluginPath, typeInfo, joinInfo, sideJoinFieldInfo, sideTableInfo);
+                }else{
+                    dsOut = SideAsyncOperator.getSideJoinDataStream(adaptStream, sideTableInfo.getType(), localSqlPluginPath, typeInfo, joinInfo, sideJoinFieldInfo, sideTableInfo);
+                }
+
+                HashBasedTable<String, String, String> mappingTable = HashBasedTable.create();
+                RowTypeInfo sideOutTypeInfo = buildOutRowTypeInfo(sideJoinFieldInfo, mappingTable);
+                dsOut.getTransformation().setOutputType(sideOutTypeInfo);
+                String targetTableName = joinInfo.getNewTableName();
+                String targetTableAlias = joinInfo.getNewTableAlias();
+
+                FieldReplaceInfo replaceInfo = new FieldReplaceInfo();
+                replaceInfo.setMappingTable(mappingTable);
+                replaceInfo.setTargetTableName(targetTableName);
+                replaceInfo.setTargetTableAlias(targetTableAlias);
+
+                replaceInfoList.add(replaceInfo);
+
+                if (!tableEnv.isRegistered(joinInfo.getNewTableName())){
+                    tableEnv.registerDataStream(joinInfo.getNewTableName(), dsOut, String.join(",", sideOutTypeInfo.getFieldNames()));
+                }
             }
         }
 
