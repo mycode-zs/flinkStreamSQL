@@ -152,12 +152,17 @@ public class SideSqlExec {
                     localTableCache.put(aliasInfo.getAlias(), table);
                 } else if (pollSqlNode.getKind() == SELECT){
                     Table table = tableEnv.sqlQuery(pollObj.toString());
-                    if (checkFieldsInfo(result, table)){
-                        table.as(tmpFields);
+                    if (result.getFieldsInfoStr() == null){
                         tableEnv.registerTable(result.getTableName(), table);
                     } else {
-                        throw new RuntimeException("Fields mismatch");
+                        if (checkFieldsInfo(result, table)){
+                            table.as(tmpFields);
+                            tableEnv.registerTable(result.getTableName(), table);
+                        } else {
+                            throw new RuntimeException("Fields mismatch");
+                        }
                     }
+
                 }
 
             }else if (pollObj instanceof JoinInfo){
