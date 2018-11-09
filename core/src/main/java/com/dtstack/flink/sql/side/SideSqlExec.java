@@ -192,7 +192,7 @@ public class SideSqlExec {
         rightScopeChild.setTableName(joinInfo.getRightTableName());
         SideTableInfo sideTableInfo = sideTableMap.get(joinInfo.getRightTableName());
         if(sideTableInfo == null){
-            sideTableInfo = sideTableMap.get(joinInfo.getRightTableName());
+            sideTableInfo = sideTableMap.get(joinInfo.getRightTableAlias());
         }
 
         if(sideTableInfo == null){
