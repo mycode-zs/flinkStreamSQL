@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
- 
+
 
 package com.dtstack.flink.sql.source.kafka.table;
 
@@ -40,6 +40,8 @@ public class KafkaSourceTableInfo extends SourceTableInfo {
     public static final String TOPIC_KEY = "topic";
 
     public static final String GROUPID_KEY = "groupId";
+
+    public static final String OFFSETRESET_KEY="offsetReset";
 
     private String bootstrapServers;
 
