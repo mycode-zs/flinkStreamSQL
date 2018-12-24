@@ -31,6 +31,7 @@ import com.dtstack.flink.sql.side.hbase.rowkeydealer.PreRowKeyModeDealerDealer;
 import com.dtstack.flink.sql.side.hbase.rowkeydealer.RowKeyEqualModeDealer;
 import com.dtstack.flink.sql.side.hbase.table.HbaseSideTableInfo;
 import com.dtstack.flink.sql.threadFactory.DTThreadFactory;
+import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.stumbleupon.async.Deferred;
 import org.apache.flink.api.java.typeutils.RowTypeInfo;
@@ -146,10 +147,12 @@ public class HbaseAsyncReqRow extends AsyncReqRow {
                     Row row = fillData(input, val);
                     resultFuture.complete(Collections.singleton(row));
                 }else if(ECacheContentType.MultiLine == val.getType()){
+                    List<Row> rowList = Lists.newArrayList();
                     for(Object one : (List)val.getContent()){
                         Row row = fillData(input, one);
-                        resultFuture.complete(Collections.singleton(row));
+                        rowList.add(row);
                     }
+                    resultFuture.complete(rowList);
                 }
                 return;
             }

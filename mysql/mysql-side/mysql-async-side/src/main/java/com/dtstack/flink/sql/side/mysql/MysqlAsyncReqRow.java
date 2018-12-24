@@ -118,12 +118,12 @@ public class MysqlAsyncReqRow extends AsyncReqRow {
                     dealMissKey(input, resultFuture);
                     return;
                 }else if(ECacheContentType.MultiLine == val.getType()){
-
+                    List<Row> rowList = Lists.newArrayList();
                     for(Object jsonArray : (List)val.getContent()){
                         Row row = fillData(input, jsonArray);
-                        resultFuture.complete(Collections.singleton(row));
+                        rowList.add(row);
                     }
-
+                    resultFuture.complete(rowList);
                 }else{
                     throw new RuntimeException("not support cache obj type " + val.getType());
                 }
@@ -152,17 +152,18 @@ public class MysqlAsyncReqRow extends AsyncReqRow {
 
                 int resultSize = rs.result().getResults().size();
                 if(resultSize > 0){
+                    List<Row> rowList = Lists.newArrayList();
                     for (JsonArray line : rs.result().getResults()) {
                         Row row = fillData(input, line);
                         if(openCache()){
                             cacheContent.add(line);
                         }
-                        resultFuture.complete(Collections.singleton(row));
-                    }
 
+                    }
                     if(openCache()){
                         putCache(key, CacheObj.buildCacheObj(ECacheContentType.MultiLine, cacheContent));
                     }
+                    resultFuture.complete(rowList);
                 }else{
                     dealMissKey(input, resultFuture);
                     if(openCache()){
