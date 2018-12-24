@@ -158,7 +158,6 @@ public class MysqlAsyncReqRow extends AsyncReqRow {
                         if(openCache()){
                             cacheContent.add(line);
                         }
-
                     }
                     if(openCache()){
                         putCache(key, CacheObj.buildCacheObj(ECacheContentType.MultiLine, cacheContent));
