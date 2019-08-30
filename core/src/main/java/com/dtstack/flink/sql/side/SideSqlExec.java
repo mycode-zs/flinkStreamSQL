@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
- 
+
 
 package com.dtstack.flink.sql.side;
 
@@ -25,6 +25,7 @@ import com.dtstack.flink.sql.parser.CreateTmpTableParser;
 import com.dtstack.flink.sql.side.operator.SideAsyncOperator;
 import com.dtstack.flink.sql.side.operator.SideWithAllCacheOperator;
 import com.dtstack.flink.sql.util.ClassUtil;
+import com.dtstack.flink.sql.util.ParseUtils;
 import org.apache.calcite.sql.SqlBasicCall;
 import org.apache.calcite.sql.SqlDataTypeSpec;
 import org.apache.calcite.sql.SqlIdentifier;
@@ -40,6 +41,7 @@ import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
+import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.typeutils.RowTypeInfo;
 import org.apache.flink.calcite.shaded.com.google.common.collect.HashBasedTable;
 import org.apache.flink.calcite.shaded.com.google.common.collect.Lists;
@@ -47,6 +49,9 @@ import org.apache.flink.calcite.shaded.com.google.common.collect.Maps;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.table.api.Table;
 import org.apache.flink.table.api.java.StreamTableEnvironment;
+import org.apache.flink.types.Row;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.*;
 
@@ -60,6 +65,8 @@ import static org.apache.calcite.sql.SqlKind.*;
  */
 
 public class SideSqlExec {
+
+    private static final Logger LOG = LoggerFactory.getLogger(SideSqlExec.class);
 
     private String localSqlPluginPath = null;
 
@@ -99,6 +106,9 @@ public class SideSqlExec {
 
                 if(pollSqlNode.getKind() == INSERT){
                     tableEnv.sqlUpdate(pollSqlNode.toString());
+                    if(LOG.isInfoEnabled()){
+                        LOG.info("exec sql: " + pollSqlNode.toString());
+                    }
                 }else if(pollSqlNode.getKind() == AS){
                     AliasInfo aliasInfo = parseASNode(pollSqlNode);
                     Table table = tableEnv.sql(aliasInfo.getName());
@@ -391,6 +401,10 @@ public class SideSqlExec {
                 || selectNode.getKind() == BETWEEN
                 || selectNode.getKind() == IS_NULL
                 || selectNode.getKind() == IS_NOT_NULL
+                || selectNode.getKind() == LESS_THAN
+                || selectNode.getKind() == GREATER_THAN
+                || selectNode.getKind() == LESS_THAN_OR_EQUAL
+                || selectNode.getKind() == GREATER_THAN_OR_EQUAL
                 ){
             SqlBasicCall sqlBasicCall = (SqlBasicCall) selectNode;
             for(int i=0; i<sqlBasicCall.getOperands().length; i++){
@@ -435,7 +449,7 @@ public class SideSqlExec {
                 }
             }
 
-            replaceSelectFieldName(elseNode, mappingTable, tableAlias);
+            ((SqlCase) selectNode).setOperand(3, replaceSelectFieldName(elseNode, mappingTable, tableAlias));
             return selectNode;
         }else if(selectNode.getKind() == OTHER){
             //不处理
@@ -461,12 +475,7 @@ public class SideSqlExec {
 
     public List<String> getConditionFields(SqlNode conditionNode, String specifyTableName){
         List<SqlNode> sqlNodeList = Lists.newArrayList();
-        if(conditionNode.getKind() == SqlKind.AND){
-            sqlNodeList.addAll(Lists.newArrayList(((SqlBasicCall)conditionNode).getOperands()));
-        }else{
-            sqlNodeList.add(conditionNode);
-        }
-
+        ParseUtils.parseAnd(conditionNode, sqlNodeList);
         List<String> conditionFields = Lists.newArrayList();
         for(SqlNode sqlNode : sqlNodeList){
             if(sqlNode.getKind() != SqlKind.EQUALS){
@@ -529,6 +538,9 @@ public class SideSqlExec {
                     AliasInfo aliasInfo = parseASNode(pollSqlNode);
                     Table table = tableEnv.sql(aliasInfo.getName());
                     tableEnv.registerTable(aliasInfo.getAlias(), table);
+                    if(LOG.isInfoEnabled()){
+                        LOG.info("Register Table {} by {}", aliasInfo.getAlias(), aliasInfo.getName());
+                    }
                     localTableCache.put(aliasInfo.getAlias(), table);
                 } else if (pollSqlNode.getKind() == SELECT){
                     Table table = tableEnv.sqlQuery(pollObj.toString());
@@ -597,7 +609,10 @@ public class SideSqlExec {
         }
 
         RowTypeInfo typeInfo = new RowTypeInfo(targetTable.getSchema().getTypes(), targetTable.getSchema().getColumnNames());
-        DataStream adaptStream = tableEnv.toAppendStream(targetTable, org.apache.flink.types.Row.class);
+
+        DataStream adaptStream = tableEnv.toRetractStream(targetTable, org.apache.flink.types.Row.class)
+                                .map((Tuple2<Boolean, Row> f0) -> { return f0.f1; })
+                                .returns(Row.class);
 
         //join side table before keyby ===> Reducing the size of each dimension table cache of async
         if(sideTableInfo.isPartitionedJoin()){

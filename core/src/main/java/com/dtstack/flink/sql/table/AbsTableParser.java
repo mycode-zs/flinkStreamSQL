@@ -56,7 +56,7 @@ public abstract class AbsTableParser {
         return true;
     }
 
-    public abstract TableInfo getTableInfo(String tableName, String fieldsInfo, Map<String, Object> props);
+    public abstract TableInfo getTableInfo(String tableName, String fieldsInfo, Map<String, Object> props) throws Exception;
 
     public boolean dealKeyPattern(String fieldRow, TableInfo tableInfo){
         for(Map.Entry<String, Pattern> keyPattern : keyPatternMap.entrySet()){
@@ -79,7 +79,7 @@ public abstract class AbsTableParser {
 
     public void parseFieldsInfo(String fieldsInfo, TableInfo tableInfo){
 
-        String[] fieldRows = DtStringUtil.splitIgnoreQuotaBrackets(fieldsInfo, ",");
+        List<String> fieldRows = DtStringUtil.splitIgnoreQuota(fieldsInfo, ',');
         for(String fieldRow : fieldRows){
             fieldRow = fieldRow.trim();
             boolean isMatcherKey = dealKeyPattern(fieldRow, tableInfo);

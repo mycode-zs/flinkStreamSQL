@@ -50,6 +50,7 @@
                             <artifactSet>
                                 <excludes>
                                     <exclude>org.apache.hadoop:hadoop-common</exclude>
+                                    <exclude>org.apache.hadoop:hadoop-yarn-common</exclude>
                                     <exclude>org.apache.hadoop:hadoop-auth</exclude>
                                     <exclude>org.apache.hadoop:hadoop-mapreduce-client-core</exclude>
                                     <exclude>org.slf4j:*</exclude>
@@ -90,7 +91,7 @@
                                 </copy>
 
                                 <move file="${basedir}/../../../plugins/hbaseasyncside/${project.artifactId}-${project.version}.jar"
-                                      tofile="${basedir}/../../../plugins/hbaseasyncside/${project.name}.jar" />
+                                      tofile="${basedir}/../../../plugins/hbaseasyncside/${project.name}-${git.branch}.jar" />
                             </tasks>
                         </configuration>
                     </execution>
