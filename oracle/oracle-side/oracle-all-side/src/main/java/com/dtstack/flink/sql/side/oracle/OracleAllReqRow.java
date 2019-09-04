@@ -22,6 +22,7 @@ import com.dtstack.flink.sql.side.FieldInfo;
 import com.dtstack.flink.sql.side.JoinInfo;
 import com.dtstack.flink.sql.side.SideTableInfo;
 import com.dtstack.flink.sql.side.rdb.all.RdbAllReqRow;
+import com.dtstack.flink.sql.util.ClassUtil;
 import com.dtstack.flink.sql.util.DtStringUtil;
 import org.apache.flink.api.java.typeutils.RowTypeInfo;
 import org.apache.flink.shaded.guava18.com.google.common.collect.Maps;
@@ -49,7 +50,7 @@ public class OracleAllReqRow extends RdbAllReqRow {
     @Override
     public Connection getConn(String dbURL, String userName, String password) {
         try {
-            Class.forName(ORACLE_DRIVER);
+            ClassUtil.forName(ORACLE_DRIVER,getClass().getClassLoader());
             Map<String, String> addParams = Maps.newHashMap();
             String targetDbUrl = DtStringUtil.addJdbcParam(dbURL, addParams, true);
             return DriverManager.getConnection(targetDbUrl, userName, password);

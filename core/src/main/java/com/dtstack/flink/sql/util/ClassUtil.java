@@ -20,8 +20,12 @@
 
 package com.dtstack.flink.sql.util;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.math.BigDecimal;
 import java.sql.Date;
+import java.sql.DriverManager;
 import java.sql.Time;
 import java.sql.Timestamp;
 
@@ -32,6 +36,10 @@ import java.sql.Timestamp;
  * @author sishu.yss
  */
 public class ClassUtil {
+
+    private static final Logger LOG = LoggerFactory.getLogger(ClassUtil.class);
+
+    public final static String lock_str = "jdbc_lock_str";
 
     public static Class<?> stringConvertClass(String str) {
         switch (str.toLowerCase()) {
@@ -194,6 +202,17 @@ public class ClassUtil {
             return "BOOLEAN";
         }
         throw new IllegalArgumentException("Unsupported data type: " + clzName);
+    }
+
+
+    public static void forName(String clazz, ClassLoader classLoader)  {
+        synchronized (lock_str){
+            try {
+                Class.forName(clazz, true, classLoader);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }
     }
 
 }

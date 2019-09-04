@@ -19,6 +19,7 @@
 package com.dtstack.flink.sql.sink.rdb.format;
 
 import com.dtstack.flink.sql.sink.rdb.RdbSink;
+import com.dtstack.flink.sql.util.ClassUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.configuration.Configuration;
@@ -59,7 +60,7 @@ public class RetractJDBCOutputFormat extends MetricOutputFormat {
     private String dbType;
     private RdbSink dbSink;
     // trigger preparedStatement execute batch interval
-    private long batchWaitInterval = 10000l;
+    private long batchWaitInterval = 10000L;
     // PreparedStatement execute batch num
     private int batchNum = 1;
     private String insertQuery;
@@ -125,7 +126,7 @@ public class RetractJDBCOutputFormat extends MetricOutputFormat {
 
 
     private void establishConnection() throws SQLException, ClassNotFoundException {
-        Class.forName(drivername);
+        ClassUtil.forName(drivername,getClass().getClassLoader());
         if (username == null) {
             dbConn = DriverManager.getConnection(dbURL);
         } else {
